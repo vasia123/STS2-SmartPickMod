@@ -1,0 +1,42 @@
+# Build artifacts
+bin/
+obj/
+*.dll
+*.pck
+*.user
+
+# Godot generated
+pack/.godot/
+pack/project.godot
+pack/mod_manifest.json
+pack/export_presets.cfg
+pack/images/relics/*.import
+
+# Generated manifests
+SmartPick.json
+
+# Generated localization data
+data/game_localization/
+
+# Local config (user-specific paths)
+local.props
+
+# IDE
+.vs/
+.vscode/
+.cursor/
+.claude/
+*.suo
+
+# Build output
+build/
+dist/
+
+# Workshop upload artifacts
+workshop/content/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+__pycache__/
