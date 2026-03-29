@@ -25,6 +25,20 @@ public static class CardRewardScreenOpenPatch
 }
 
 /// <summary>
+/// Re-badge when card reward options are refreshed (reroll/shuffle).
+/// </summary>
+[HarmonyPatch(typeof(NCardRewardSelectionScreen), nameof(NCardRewardSelectionScreen.RefreshOptions))]
+public static class CardRewardRefreshPatch
+{
+    [HarmonyPostfix]
+    public static void AfterRefresh(NCardRewardSelectionScreen __instance)
+    {
+        CardBadgeOverlay.ClearBadges();
+        CardBadgeOverlay.AttachBadgesDeferred(__instance);
+    }
+}
+
+/// <summary>
 /// Clear badges when card reward screen closes.
 /// </summary>
 [HarmonyPatch(typeof(NCardRewardSelectionScreen), nameof(NCardRewardSelectionScreen.AfterOverlayClosed))]

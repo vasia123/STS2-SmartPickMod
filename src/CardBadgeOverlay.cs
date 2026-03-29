@@ -39,14 +39,21 @@ public static class CardBadgeOverlay
     {
         try
         {
-            var character = CombatExporter.ResolveCharacterName();
+            Log.Info($"[SmartPick] CardBadge: scanning {screenNode.GetType().Name}...");
+            var fallbackCharacter = CombatExporter.ResolveCharacterName();
             var cards = new List<(Control node, CardModel model)>();
             FindCardsInTree(screenNode, cards, 0);
+            Log.Info($"[SmartPick] CardBadge: found {cards.Count} cards (fallback={fallbackCharacter})");
 
             foreach (var (node, model) in cards)
             {
                 var cardName = model.Id.Entry;
                 if (string.IsNullOrEmpty(cardName)) continue;
+
+                // Get character from the card's pool (works correctly in multiplayer)
+                string character;
+                try { character = model.Pool?.Title ?? fallbackCharacter; }
+                catch { character = fallbackCharacter; }
 
                 var lookupName = NormalizeCardId(cardName);
                 var tiers = TierData.GetTiers(character, lookupName);
@@ -58,7 +65,7 @@ public static class CardBadgeOverlay
             }
 
             if (_badges.Count > 0)
-                Log.Info($"[SmartPick] CardBadge: attached {_badges.Count} badges (char={character})");
+                Log.Info($"[SmartPick] CardBadge: attached {_badges.Count} badges");
         }
         catch (Exception ex)
         {
@@ -69,16 +76,30 @@ public static class CardBadgeOverlay
     /// <summary>
     /// Attach badges after a short delay (for screens that populate cards asynchronously).
     /// </summary>
+    private static volatile int _badgeGeneration;
+
     public static void AttachBadgesDeferred(Node screenNode)
     {
+        var gen = ++_badgeGeneration;
         Task.Run(async () =>
         {
-            await Task.Delay(150);
-            Callable.From(() =>
+            // Try multiple times — cards may not be created yet when the screen opens
+            for (int attempt = 0; attempt < 5; attempt++)
             {
-                try { AttachBadges(screenNode); }
-                catch (Exception ex) { Log.Error($"[SmartPick] AttachBadgesDeferred: {ex.Message}"); }
-            }).CallDeferred();
+                await Task.Delay(attempt == 0 ? 50 : 250);
+                if (gen != _badgeGeneration) return; // another call superseded us
+                Callable.From(() =>
+                {
+                    try
+                    {
+                        if (gen != _badgeGeneration) return;
+                        if (!GodotObject.IsInstanceValid(screenNode)) return;
+                        if (_badges.Count > 0) return; // already attached
+                        AttachBadges(screenNode);
+                    }
+                    catch (Exception ex) { Log.Error($"[SmartPick] AttachBadgesDeferred: {ex.Message}"); }
+                }).CallDeferred();
+            }
         });
     }
 
