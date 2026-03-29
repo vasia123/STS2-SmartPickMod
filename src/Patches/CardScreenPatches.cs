@@ -70,7 +70,7 @@ public static class CardGridSelectionScreenOpenPatch
 }
 
 /// <summary>
-/// Clear badges when any card grid selection screen closes.
+/// Clear badges when any card grid selection screen closes, re-badge merchant if underneath.
 /// </summary>
 [HarmonyPatch(typeof(NCardGridSelectionScreen), nameof(NCardGridSelectionScreen.AfterOverlayClosed))]
 public static class CardGridSelectionScreenClosePatch
@@ -80,6 +80,13 @@ public static class CardGridSelectionScreenClosePatch
     {
         CardBadgeOverlay.ActiveGridSelection = null;
         CardBadgeOverlay.ClearBadges();
+
+        // Re-badge the merchant underneath if still open
+        if (CardBadgeOverlay.ActiveMerchant != null
+            && GodotObject.IsInstanceValid(CardBadgeOverlay.ActiveMerchant))
+        {
+            CardBadgeOverlay.AttachBadgesDeferred(CardBadgeOverlay.ActiveMerchant);
+        }
     }
 }
 
