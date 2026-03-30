@@ -252,6 +252,20 @@ public static class MerchantCloseBadgePatch
 }
 
 /// <summary>
+/// Re-badge merchant after a purchase (handles The Courier relic restocking).
+/// Uses longer delay to ensure new items are ready.
+/// </summary>
+[HarmonyPatch(typeof(NMerchantInventory), "OnPurchaseCompleted")]
+public static class MerchantPurchaseBadgePatch
+{
+    [HarmonyPostfix]
+    public static void AfterPurchase(NMerchantInventory __instance)
+    {
+        CardBadgeOverlay.RebadgeAfterPurchase(__instance);
+    }
+}
+
+/// <summary>
 /// Attach tier badges in the card compendium (card library) after cards are filtered/displayed.
 /// NCardLibraryGrid.FilterCards is called on open and every filter/sort change.
 /// </summary>

@@ -58,15 +58,33 @@ public static class RelicBadgeOverlay
         }
     }
 
-    public static void AttachBadgesDeferred(Node screenNode)
+    public static void AttachBadgesDeferred(Node screenNode, int delayMs = 150)
     {
         Task.Run(async () =>
         {
-            await Task.Delay(150);
+            await Task.Delay(delayMs);
             Callable.From(() =>
             {
                 try { AttachBadges(screenNode); }
                 catch (Exception ex) { Log.Error($"[SmartPick] RelicBadge Deferred: {ex.Message}"); }
+            }).CallDeferred();
+        });
+    }
+
+    public static void RebadgeAfterPurchase(Node screenNode)
+    {
+        Task.Run(async () =>
+        {
+            await Task.Delay(300);
+            Callable.From(() =>
+            {
+                try
+                {
+                    if (!GodotObject.IsInstanceValid(screenNode)) return;
+                    ClearBadges();
+                    AttachBadges(screenNode);
+                }
+                catch (Exception ex) { Log.Error($"[SmartPick] RelicBadge RebadgeAfterPurchase: {ex.Message}"); }
             }).CallDeferred();
         });
     }

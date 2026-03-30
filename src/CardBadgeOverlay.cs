@@ -75,19 +75,19 @@ public static class CardBadgeOverlay
 
     /// <summary>
     /// Attach badges after a short delay (for screens that populate cards asynchronously).
+    /// Retries up to 5 times if no cards found yet.
     /// </summary>
     private static volatile int _badgeGeneration;
 
-    public static void AttachBadgesDeferred(Node screenNode)
+    public static void AttachBadgesDeferred(Node screenNode, int delayMs = 50)
     {
         var gen = ++_badgeGeneration;
         Task.Run(async () =>
         {
-            // Try multiple times — cards may not be created yet when the screen opens
             for (int attempt = 0; attempt < 5; attempt++)
             {
-                await Task.Delay(attempt == 0 ? 50 : 250);
-                if (gen != _badgeGeneration) return; // another call superseded us
+                await Task.Delay(attempt == 0 ? delayMs : 250);
+                if (gen != _badgeGeneration) return;
                 Callable.From(() =>
                 {
                     try
@@ -100,6 +100,31 @@ public static class CardBadgeOverlay
                     catch (Exception ex) { Log.Error($"[SmartPick] AttachBadgesDeferred: {ex.Message}"); }
                 }).CallDeferred();
             }
+        });
+    }
+
+    /// <summary>
+    /// Force re-badge after purchase — clears and re-attaches with longer delay
+    /// to ensure new merchant items are ready.
+    /// </summary>
+    public static void RebadgeAfterPurchase(Node screenNode)
+    {
+        var gen = ++_badgeGeneration;
+        Task.Run(async () =>
+        {
+            await Task.Delay(300);
+            if (gen != _badgeGeneration) return;
+            Callable.From(() =>
+            {
+                try
+                {
+                    if (gen != _badgeGeneration) return;
+                    if (!GodotObject.IsInstanceValid(screenNode)) return;
+                    ClearBadges();
+                    AttachBadges(screenNode);
+                }
+                catch (Exception ex) { Log.Error($"[SmartPick] RebadgeAfterPurchase: {ex.Message}"); }
+            }).CallDeferred();
         });
     }
 

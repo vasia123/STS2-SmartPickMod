@@ -91,3 +91,17 @@ public static class MerchantRelicClosePatch
         RelicBadgeOverlay.ClearBadges();
     }
 }
+
+/// <summary>
+/// Re-badge relics after a purchase (handles The Courier relic restocking).
+/// Uses longer delay to ensure new items are ready.
+/// </summary>
+[HarmonyPatch(typeof(NMerchantInventory), "OnPurchaseCompleted")]
+public static class MerchantRelicPurchasePatch
+{
+    [HarmonyPostfix]
+    public static void AfterPurchase(NMerchantInventory __instance)
+    {
+        RelicBadgeOverlay.RebadgeAfterPurchase(__instance);
+    }
+}
