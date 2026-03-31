@@ -12,11 +12,7 @@ public static class RelicTierData
 {
     // relic name (normalized) → tier letter
     private static Dictionary<string, string> _index = new();
-
-    private static readonly Dictionary<string, int> TierScore = new()
-    {
-        ["S"] = 92, ["A"] = 78, ["B"] = 64, ["C"] = 50, ["D"] = 36,
-    };
+    private static Dictionary<string, string> _customIndex = new();
 
     private static bool _initialized;
 
@@ -40,18 +36,55 @@ public static class RelicTierData
         if (string.IsNullOrEmpty(relicName)) return null;
 
         var key = NormalizeName(relicName);
-        if (_index.TryGetValue(key, out var tier))
-            return new RelicTierResult(tier, TierScore.GetValueOrDefault(tier, 50));
 
-        // Fuzzy match: collapse to alphanumeric
+        // Custom tier takes priority
+        if (_customIndex.TryGetValue(key, out var customTier))
+            return new RelicTierResult(customTier, TierData.TierScore.GetValueOrDefault(customTier, 50));
+
+        if (_index.TryGetValue(key, out var tier))
+            return new RelicTierResult(tier, TierData.TierScore.GetValueOrDefault(tier, 50));
+
+        // Fuzzy match
         var collapsed = CollapseKey(key);
+        foreach (var (k, v) in _customIndex)
+        {
+            if (CollapseKey(k) == collapsed)
+                return new RelicTierResult(v, TierData.TierScore.GetValueOrDefault(v, 50));
+        }
         foreach (var (k, v) in _index)
         {
             if (CollapseKey(k) == collapsed)
-                return new RelicTierResult(v, TierScore.GetValueOrDefault(v, 50));
+                return new RelicTierResult(v, TierData.TierScore.GetValueOrDefault(v, 50));
         }
 
         return null;
+    }
+
+    public static void SetCustomTier(string relicName, string tier)
+    {
+        _customIndex[NormalizeName(relicName)] = tier;
+    }
+
+    public static void RemoveCustomTier(string relicName)
+    {
+        _customIndex.Remove(NormalizeName(relicName));
+    }
+
+    public static Dictionary<string, string> GetCustomIndex() => _customIndex;
+
+    public static void ResetCustomTiers()
+    {
+        _customIndex.Clear();
+    }
+
+    public static void LoadCustomFromJson(System.Text.Json.JsonElement el)
+    {
+        _customIndex.Clear();
+        foreach (var prop in el.EnumerateObject())
+        {
+            _customIndex[prop.Name] = prop.Value.GetString() ?? "";
+        }
+        Log.Info($"[SmartPick] Custom relic tiers loaded ({_customIndex.Count} relics)");
     }
 
     private static string NormalizeName(string name)

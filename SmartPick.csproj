@@ -21,6 +21,8 @@
 		<ModsOutputDir>$(STS2GamePath)\mods</ModsOutputDir>
 		<GameDataDir>$(STS2GamePath)\data_sts2_windows_x86_64</GameDataDir>
 		<PackProject>$(ProjectDir)pack</PackProject>
+		<!-- Required for Godot source generators to find project.godot -->
+		<GodotProjectDir>$(ProjectDir)pack</GodotProjectDir>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -39,6 +41,12 @@
 		<Reference Include="sts2">
 			<HintPath>$(GameDataDir)\sts2.dll</HintPath>
 		</Reference>
+	</ItemGroup>
+
+	<!-- Godot source generators — enables _GetDragData, _Ready, _Input etc. on our C# classes -->
+	<ItemGroup>
+		<Analyzer Include="build\analyzers\Godot.SourceGenerators.dll" />
+		<CompilerVisibleProperty Include="GodotProjectDir" />
 	</ItemGroup>
 
 	<Target Name="GenerateProjectGodot" BeforeTargets="BeforeBuild">

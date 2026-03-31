@@ -30,17 +30,14 @@ public static class RelicBadgeOverlay
     {
         try
         {
-            Log.Info($"[SmartPick] RelicBadge: scanning {screenNode.GetType().Name}...");
             var relics = new List<(Control node, RelicModel model)>();
             FindRelicsInTree(screenNode, relics, 0);
-            Log.Info($"[SmartPick] RelicBadge: found {relics.Count} relic nodes");
 
             foreach (var (node, model) in relics)
             {
                 var entry = model.Id.Entry;
                 var relicName = RelicTierData.IdEntryToDisplayName(entry);
                 var tier = RelicTierData.GetTier(relicName);
-                Log.Info($"[SmartPick] RelicBadge: '{entry}' → '{relicName}' → tier={tier?.Tier ?? "null"}");
 
                 if (string.IsNullOrEmpty(relicName)) continue;
                 if (tier == null) continue;
@@ -50,7 +47,6 @@ public static class RelicBadgeOverlay
                     _badges.Add(badge);
             }
 
-            Log.Info($"[SmartPick] RelicBadge: attached {_badges.Count} badges total");
         }
         catch (Exception ex)
         {
@@ -110,9 +106,6 @@ public static class RelicBadgeOverlay
         {
             if (child == null) continue;
 
-            if (depth <= 3)
-                Log.Info($"[SmartPick] RelicScan d={depth}: {child.GetType().Name} ({child.Name})");
-
             // NRelicBasicHolder — relic reward screen (typed access)
             if (child is NRelicBasicHolder basicHolder && basicHolder.Relic?.Model != null)
             {
@@ -124,7 +117,6 @@ public static class RelicBadgeOverlay
             if (child is NMerchantRelic merchantRelic)
             {
                 var model = GetPrivateField<RelicModel>(merchantRelic, "_relic");
-                Log.Info($"[SmartPick] RelicScan: NMerchantRelic model={model?.Id.Entry ?? "null"}");
                 if (model != null)
                 {
                     results.Add((merchantRelic, model));
@@ -255,7 +247,6 @@ public static class RelicBadgeOverlay
             // Position at top-right of the icon
             mainCircle.Position = new Vector2(attachTarget.Size.X - mainSize * 0.7f, -mainSize * 0.3f);
 
-            Log.Info($"[SmartPick] RelicBadge: attach={attachTarget.GetType().Name} size={attachTarget.Size} circle.pos={mainCircle.Position}");
             return badge;
         }
         catch (Exception ex)

@@ -39,12 +39,9 @@ public static class CardBadgeOverlay
     {
         try
         {
-            Log.Info($"[SmartPick] CardBadge: scanning {screenNode.GetType().Name}...");
             var fallbackCharacter = CombatExporter.ResolveCharacterName();
             var cards = new List<(Control node, CardModel model)>();
             FindCardsInTree(screenNode, cards, 0);
-            Log.Info($"[SmartPick] CardBadge: found {cards.Count} cards (fallback={fallbackCharacter})");
-
             foreach (var (node, model) in cards)
             {
                 var cardName = model.Id.Entry;
@@ -64,8 +61,7 @@ public static class CardBadgeOverlay
                     _badges.Add(badge);
             }
 
-            if (_badges.Count > 0)
-                Log.Info($"[SmartPick] CardBadge: attached {_badges.Count} badges");
+
         }
         catch (Exception ex)
         {
@@ -201,6 +197,8 @@ public static class CardBadgeOverlay
     /// <summary>
     /// Convert card ID entry (e.g. "CARD_SWORD_BOOMERANG") to title case for tier lookup.
     /// </summary>
+    public static string NormalizeCardIdPublic(string entry) => NormalizeCardId(entry);
+
     private static string NormalizeCardId(string entry)
     {
         // Strip "CARD_" prefix if present
