@@ -8,21 +8,34 @@ namespace FirstMod;
 /// <summary>
 /// Loads embedded tier-list JSON files and provides per-card tier lookups.
 /// Two sources: Mobalytics and slaythespire-2.com wiki.
-/// Supports custom tier overrides saved by the user.
+/// Supports custom tier overrides with position-based scoring.
 /// </summary>
 public static class TierData
 {
     // character (lowercase) → card name (lowercase) → tier letter
     private static Dictionary<string, Dictionary<string, string>> _mobaIndex = new();
     private static Dictionary<string, Dictionary<string, string>> _wikiIndex = new();
-    private static Dictionary<string, Dictionary<string, string>> _customIndex = new();
+
+    // Custom tiers: character → tier → ordered list of card names
+    private static Dictionary<string, Dictionary<string, List<string>>> _customOrdered = new();
 
     public static readonly Dictionary<string, int> TierScore = new()
     {
         ["S"] = 92, ["A"] = 78, ["B"] = 64, ["C"] = 50, ["D"] = 36, ["F"] = 22,
     };
 
+    // Score ranges per tier: (max, min) — first item gets max, last gets min
+    public static readonly Dictionary<string, (int max, int min)> TierRange = new()
+    {
+        ["S"] = (100, 85),
+        ["A"] = (84, 71),
+        ["B"] = (70, 57),
+        ["C"] = (56, 43),
+        ["D"] = (42, 29),
+    };
+
     public static readonly string[] TierLetters = ["S", "A", "B", "C", "D"];
+    public static readonly string[] AllTierLetters = ["S", "A", "B", "C", "D", "?"];
 
     private static bool _initialized;
     private static string? _customTiersPath;
@@ -56,13 +69,10 @@ public static class TierData
         var charKey = NormalizeCharacter(character);
         var cardKey = NormalizeCardName(cardName);
 
-        // Custom tier takes priority over everything
-        var customTier = LookupTier(_customIndex, charKey, cardKey);
-        if (customTier != null)
-        {
-            var customScore = TierScore.GetValueOrDefault(customTier, 50);
-            return new TierResult(null, null, customTier, customScore);
-        }
+        // Custom tier takes priority — with position-based score
+        var customResult = LookupCustomTier(charKey, cardKey);
+        if (customResult != null)
+            return customResult;
 
         var mobaTier = LookupTier(_mobaIndex, charKey, cardKey);
         var wikiTier = LookupTier(_wikiIndex, charKey, cardKey);
@@ -93,8 +103,44 @@ public static class TierData
             score = -1;
 
         var blended = ScoreToTier(score);
-
         return new TierResult(mobaTier, wikiTier, blended, score);
+    }
+
+    /// <summary>Look up custom tier with position-based scoring.</summary>
+    private static TierResult? LookupCustomTier(string charKey, string cardKey)
+    {
+        if (!_customOrdered.TryGetValue(charKey, out var tiers)) return null;
+
+        foreach (var (tier, list) in tiers)
+        {
+            var idx = list.FindIndex(c => c.Equals(cardKey, StringComparison.OrdinalIgnoreCase));
+            if (idx < 0)
+            {
+                // Fuzzy match
+                var collapsed = CollapseKey(cardKey);
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (CollapseKey(list[i]) == collapsed) { idx = i; break; }
+                }
+            }
+            if (idx >= 0)
+            {
+                var score = CalculatePositionScore(tier, idx, list.Count);
+                return new TierResult(null, null, tier, score);
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Calculate score based on position within a tier.</summary>
+    public static int CalculatePositionScore(string tier, int position, int totalInTier)
+    {
+        if (!TierRange.TryGetValue(tier, out var range))
+            return TierScore.GetValueOrDefault(tier, 50);
+
+        if (totalInTier <= 1) return range.max;
+        // Linear interpolation: first = max, last = min
+        return range.max - (int)((float)position / (totalInTier - 1) * (range.max - range.min));
     }
 
     public static string ScoreToTier(int score) => score switch
@@ -108,14 +154,38 @@ public static class TierData
         _ => "?",
     };
 
-    /// <summary>Set a custom tier for a card (used by the tier editor UI).</summary>
-    public static void SetCustomTier(string character, string cardName, string tier)
+    /// <summary>Set a custom tier for a card. Removes from previous tier first.</summary>
+    public static void SetCustomTier(string character, string cardName, string tier, int insertAt = -1)
     {
         var charKey = NormalizeCharacter(character);
         var cardKey = NormalizeCardName(cardName);
-        if (!_customIndex.ContainsKey(charKey))
-            _customIndex[charKey] = new(StringComparer.OrdinalIgnoreCase);
-        _customIndex[charKey][cardKey] = tier;
+
+        // Remove from any existing tier first
+        RemoveCustomTier(character, cardName);
+
+        EnsureCustomList(charKey, tier);
+        var list = _customOrdered[charKey][tier];
+        if (insertAt >= 0 && insertAt < list.Count)
+            list.Insert(insertAt, cardKey);
+        else
+            list.Add(cardKey);
+    }
+
+    /// <summary>Set the entire ordered list for a tier (used by capture).</summary>
+    public static void SetCustomTierList(string character, string tier, List<string> orderedCards)
+    {
+        var charKey = NormalizeCharacter(character);
+        if (!_customOrdered.ContainsKey(charKey))
+            _customOrdered[charKey] = new();
+        _customOrdered[charKey][tier] = orderedCards;
+    }
+
+    private static void EnsureCustomList(string charKey, string tier)
+    {
+        if (!_customOrdered.ContainsKey(charKey))
+            _customOrdered[charKey] = new();
+        if (!_customOrdered[charKey].ContainsKey(tier))
+            _customOrdered[charKey][tier] = new();
     }
 
     /// <summary>Remove a custom tier override for a card.</summary>
@@ -123,17 +193,28 @@ public static class TierData
     {
         var charKey = NormalizeCharacter(character);
         var cardKey = NormalizeCardName(cardName);
-        if (_customIndex.TryGetValue(charKey, out var cards))
-            cards.Remove(cardKey);
+        if (!_customOrdered.TryGetValue(charKey, out var tiers)) return;
+
+        foreach (var (_, list) in tiers)
+        {
+            list.RemoveAll(c => c.Equals(cardKey, StringComparison.OrdinalIgnoreCase));
+        }
     }
 
-    /// <summary>Get all custom tiers (for saving).</summary>
-    public static Dictionary<string, Dictionary<string, string>> GetCustomIndex() => _customIndex;
+    /// <summary>Get ordered custom tiers for a character (for UI display).</summary>
+    public static Dictionary<string, List<string>>? GetCustomTiersForCharacter(string character)
+    {
+        var charKey = NormalizeCharacter(character);
+        return _customOrdered.TryGetValue(charKey, out var tiers) ? tiers : null;
+    }
+
+    /// <summary>Get the full custom ordered index (for saving).</summary>
+    public static Dictionary<string, Dictionary<string, List<string>>> GetCustomOrdered() => _customOrdered;
 
     /// <summary>Reset all custom tiers to empty.</summary>
     public static void ResetCustomTiers()
     {
-        _customIndex.Clear();
+        _customOrdered.Clear();
     }
 
     public static void SaveCustomTiers()
@@ -143,8 +224,8 @@ public static class TierData
             _customTiersPath ??= ProjectSettings.GlobalizePath("user://smartpick_custom_tiers.json");
             var data = new Dictionary<string, object>
             {
-                ["cards"] = _customIndex,
-                ["relics"] = RelicTierData.GetCustomIndex()
+                ["cards"] = _customOrdered,
+                ["relics"] = RelicTierData.GetCustomOrdered()
             };
             var json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(_customTiersPath, json);
@@ -165,8 +246,8 @@ public static class TierData
 
             if (doc.RootElement.TryGetProperty("cards", out var cardsEl))
             {
-                _customIndex = ParseTierIndex(cardsEl);
-                Log.Info($"[SmartPick] Custom card tiers loaded ({_customIndex.Count} characters)");
+                _customOrdered = ParseOrderedIndex(cardsEl);
+                Log.Info($"[SmartPick] Custom card tiers loaded ({_customOrdered.Count} characters)");
             }
 
             if (doc.RootElement.TryGetProperty("relics", out var relicsEl))
@@ -177,17 +258,26 @@ public static class TierData
         catch (Exception ex) { Log.Error($"[SmartPick] LoadCustomTiers: {ex.Message}"); }
     }
 
-    private static Dictionary<string, Dictionary<string, string>> ParseTierIndex(JsonElement el)
+    private static Dictionary<string, Dictionary<string, List<string>>> ParseOrderedIndex(JsonElement el)
     {
-        var result = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, Dictionary<string, List<string>>>(StringComparer.OrdinalIgnoreCase);
         foreach (var charProp in el.EnumerateObject())
         {
-            var cardMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var tierMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var tierProp in charProp.Value.EnumerateObject())
             {
-                cardMap[tierProp.Name] = tierProp.Value.GetString() ?? "";
+                var list = new List<string>();
+                if (tierProp.Value.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in tierProp.Value.EnumerateArray())
+                    {
+                        var name = item.GetString();
+                        if (!string.IsNullOrEmpty(name)) list.Add(name);
+                    }
+                }
+                tierMap[tierProp.Name] = list;
             }
-            result[charProp.Name] = cardMap;
+            result[charProp.Name] = tierMap;
         }
         return result;
     }
@@ -196,7 +286,6 @@ public static class TierData
     {
         if (!index.TryGetValue(charKey, out var cards)) return null;
         if (cards.TryGetValue(cardKey, out var tier)) return tier;
-        // Try without spaces/symbols for fuzzy match
         var collapsed = CollapseKey(cardKey);
         foreach (var (k, v) in cards)
         {
@@ -205,24 +294,21 @@ public static class TierData
         return null;
     }
 
-    private static string NormalizeCardName(string name)
+    public static string NormalizeCardName(string name)
     {
         if (string.IsNullOrEmpty(name)) return "";
         var s = name.TrimEnd('+').Trim();
         return s.ToLowerInvariant();
     }
 
-    private static string NormalizeCharacter(string character)
+    public static string NormalizeCharacter(string character)
     {
         if (string.IsNullOrEmpty(character)) return "";
         var s = character;
-        // Handle "CHARACTER.SILENT (18436160)" format
         var parenIdx = s.IndexOf('(');
         if (parenIdx > 0) s = s.Substring(0, parenIdx).Trim();
-        // Handle "CHARACTER.SILENT" format
         var dotIdx = s.LastIndexOf('.');
         if (dotIdx >= 0) s = s.Substring(dotIdx + 1);
-        // Handle "IroncladPlayer" format
         s = s.Replace("Player", "").Trim();
         return s.ToLowerInvariant();
     }
@@ -256,7 +342,7 @@ public static class TierData
 
             foreach (var tierProp in charProp.Value.EnumerateObject())
             {
-                var tierLetter = tierProp.Name; // S, A, B, C, D, F
+                var tierLetter = tierProp.Name;
                 foreach (var card in tierProp.Value.EnumerateArray())
                 {
                     var cardName = card.GetString();

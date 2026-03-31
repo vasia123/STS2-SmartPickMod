@@ -24,9 +24,11 @@ public partial class TierRow : HBoxContainer
     private PanelContainer _flowBg = null!;
     private StyleBoxFlat _normalFlowStyle = null!;
     private StyleBoxFlat _highlightFlowStyle = null!;
+    private Control? _placeholder;
+    private int _placeholderIndex = -1;
 
-    /// <summary>Called when an item is dropped into this row.</summary>
-    public event Action<string, TierItemIcon.Type, string>? ItemDropped;
+    /// <summary>Called when an item is dropped into this row. Args: itemId, itemType, character, insertIndex.</summary>
+    public event Action<string, TierItemIcon.Type, string, int>? ItemDropped;
 
     public TierRow(string tier)
     {
@@ -87,6 +89,79 @@ public partial class TierRow : HBoxContainer
     public void HighlightDrop(bool on)
     {
         _flowBg?.AddThemeStyleboxOverride("panel", on ? _highlightFlowStyle : _normalFlowStyle);
+        if (!on) RemovePlaceholder();
+    }
+
+    /// <summary>Show a placeholder gap at the insertion position, shifting other items.</summary>
+    public void UpdatePlaceholder(Vector2 globalDropPos)
+    {
+        if (_flow == null) return;
+
+        int newIndex = CalculateInsertIndex(globalDropPos);
+        if (newIndex < 0) newIndex = _flow.GetChildCount();
+
+        // Account for placeholder already being in the flow
+        if (_placeholder != null && _placeholder.GetParent() == _flow)
+        {
+            int currentIdx = _placeholder.GetIndex();
+            if (currentIdx == newIndex || currentIdx == newIndex - 1)
+                return; // already in the right spot
+            _flow.RemoveChild(_placeholder);
+        }
+
+        if (_placeholder == null)
+        {
+            _placeholder = new PanelContainer();
+            _placeholder.CustomMinimumSize = new Vector2(120, 34);
+            var style = new StyleBoxFlat();
+            style.BgColor = new Color(1f, 0.85f, 0.3f, 0.15f);
+            style.CornerRadiusBottomLeft = 4;
+            style.CornerRadiusBottomRight = 4;
+            style.CornerRadiusTopLeft = 4;
+            style.CornerRadiusTopRight = 4;
+            style.BorderWidthBottom = 2;
+            style.BorderWidthTop = 2;
+            style.BorderWidthLeft = 2;
+            style.BorderWidthRight = 2;
+            style.BorderColor = new Color(1f, 0.85f, 0.3f, 0.6f);
+            ((PanelContainer)_placeholder).AddThemeStyleboxOverride("panel", style);
+            _placeholder.MouseFilter = MouseFilterEnum.Ignore;
+        }
+
+        // Clamp index
+        var childCount = _flow.GetChildCount();
+        if (newIndex > childCount) newIndex = childCount;
+
+        _flow.AddChild(_placeholder);
+        _flow.MoveChild(_placeholder, newIndex);
+        _placeholderIndex = newIndex;
+
+        // Calculate real insert index (excluding placeholder)
+        int realIndex = 0;
+        for (int i = 0; i < _flow.GetChildCount(); i++)
+        {
+            if (_flow.GetChild(i) == _placeholder)
+            {
+                _lastRealInsertIndex = realIndex;
+                break;
+            }
+            realIndex++;
+        }
+    }
+
+    public void RemovePlaceholder()
+    {
+        if (_placeholder != null && _placeholder.GetParent() == _flow)
+            _flow.RemoveChild(_placeholder);
+        _placeholderIndex = -1;
+    }
+
+    private int _lastRealInsertIndex = -1;
+
+    /// <summary>Get the logical insert index (excluding the placeholder itself).</summary>
+    public int GetPlaceholderInsertIndex()
+    {
+        return _lastRealInsertIndex;
     }
 
     public void AddItem(Control icon)
@@ -103,15 +178,57 @@ public partial class TierRow : HBoxContainer
             child.QueueFree();
     }
 
-    public void OnItemDropped(Godot.Collections.Dictionary data)
+    public void OnItemDropped(Godot.Collections.Dictionary data, Vector2 globalDropPosition)
     {
         var itemId = data["item_id"].AsString();
         var itemType = (TierItemIcon.Type)data["item_type"].AsInt32();
         var character = data["character"].AsString();
-        ItemDropped?.Invoke(itemId, itemType, character);
+
+        int insertAt = GetPlaceholderInsertIndex();
+        RemovePlaceholder();
+        ItemDropped?.Invoke(itemId, itemType, character, insertAt);
+    }
+
+    private int CalculateInsertIndex(Vector2 globalPos)
+    {
+        if (_flow == null) return -1;
+
+        // Find the closest item considering both rows (Y) and columns (X)
+        int bestIndex = _flow.GetChildCount();
+        float bestDist = float.MaxValue;
+
+        for (int i = 0; i < _flow.GetChildCount(); i++)
+        {
+            var child = _flow.GetChild<Control>(i);
+            if (child == _placeholder) continue;
+
+            var childCenter = child.GlobalPosition + child.Size / 2;
+
+            // If cursor is on the same row (Y within child height)
+            if (globalPos.Y >= child.GlobalPosition.Y && globalPos.Y <= child.GlobalPosition.Y + child.Size.Y)
+            {
+                // Insert before this child if cursor is left of its center
+                if (globalPos.X < childCenter.X)
+                    return i;
+            }
+            // If cursor is above this child's row — insert before it
+            else if (globalPos.Y < child.GlobalPosition.Y)
+            {
+                return i;
+            }
+        }
+
+        return bestIndex; // append at end
     }
 
     public int ItemCount => _flow?.GetChildCount() ?? 0;
+
+    public IEnumerable<Node> GetFlowChildren()
+    {
+        if (_flow == null) yield break;
+        foreach (var child in _flow.GetChildren())
+            yield return child;
+    }
 
     private static StyleBoxFlat MakeFlowStyle(bool highlight)
     {
@@ -178,6 +295,7 @@ public partial class TierDropTarget : PanelContainer
                     _isHighlighted = true;
                     _row.HighlightDrop(true);
                 }
+                _row.UpdatePlaceholder(GlobalPosition + atPosition);
                 return true;
             }
         }
@@ -190,7 +308,7 @@ public partial class TierDropTarget : PanelContainer
         _row.HighlightDrop(false);
         if (data.VariantType == Variant.Type.Dictionary)
         {
-            _row.OnItemDropped(data.AsGodotDictionary());
+            _row.OnItemDropped(data.AsGodotDictionary(), GlobalPosition + atPosition);
         }
     }
 

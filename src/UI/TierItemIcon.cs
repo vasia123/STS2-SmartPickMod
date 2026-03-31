@@ -141,6 +141,7 @@ public partial class TierItemIcon : PanelContainer
     {
         _isDragging = true;
         AnyDragging = true;
+        HideGameHoverTips();
         ItemDragStarted?.Invoke(this);
 
         // Create a visual copy of this item as drag preview
@@ -191,10 +192,14 @@ public partial class TierItemIcon : PanelContainer
     // Accept drops on top of items — forward to parent TierRow
     public override bool _CanDropData(Vector2 atPosition, Variant data)
     {
-        // Find parent TierDropTarget and delegate
-        var parent = GetParent()?.GetParent(); // HFlowContainer → TierDropTarget(PanelContainer)
+        var parent = GetParent()?.GetParent();
         if (parent is TierDropTarget dropTarget)
-            return dropTarget._CanDropData(atPosition, data);
+        {
+            // Convert to TierDropTarget-relative position
+            var globalPos = GlobalPosition + atPosition;
+            var relativePos = globalPos - dropTarget.GlobalPosition;
+            return dropTarget._CanDropData(relativePos, data);
+        }
         return false;
     }
 
@@ -202,7 +207,12 @@ public partial class TierItemIcon : PanelContainer
     {
         var parent = GetParent()?.GetParent();
         if (parent is TierDropTarget dropTarget)
-            dropTarget._DropData(atPosition, data);
+        {
+            // Convert to TierDropTarget-relative position
+            var globalPos = GlobalPosition + atPosition;
+            var relativePos = globalPos - dropTarget.GlobalPosition;
+            dropTarget._DropData(relativePos, data);
+        }
     }
 
     private static void DisableMouseRecursive(Node node)

@@ -7,12 +7,15 @@ namespace FirstMod;
 /// <summary>
 /// Loads embedded relic tier-list JSON and provides per-relic tier lookups.
 /// Single source (Mobalytics), global tiers (not per-character).
+/// Supports custom ordered tiers with position-based scoring.
 /// </summary>
 public static class RelicTierData
 {
     // relic name (normalized) → tier letter
     private static Dictionary<string, string> _index = new();
-    private static Dictionary<string, string> _customIndex = new();
+
+    // Custom tiers: tier → ordered list of relic names
+    private static Dictionary<string, List<string>> _customOrdered = new();
 
     private static bool _initialized;
 
@@ -37,20 +40,15 @@ public static class RelicTierData
 
         var key = NormalizeName(relicName);
 
-        // Custom tier takes priority
-        if (_customIndex.TryGetValue(key, out var customTier))
-            return new RelicTierResult(customTier, TierData.TierScore.GetValueOrDefault(customTier, 50));
+        // Custom ordered tier takes priority
+        var customResult = LookupCustomTier(key);
+        if (customResult != null) return customResult;
 
         if (_index.TryGetValue(key, out var tier))
             return new RelicTierResult(tier, TierData.TierScore.GetValueOrDefault(tier, 50));
 
         // Fuzzy match
         var collapsed = CollapseKey(key);
-        foreach (var (k, v) in _customIndex)
-        {
-            if (CollapseKey(k) == collapsed)
-                return new RelicTierResult(v, TierData.TierScore.GetValueOrDefault(v, 50));
-        }
         foreach (var (k, v) in _index)
         {
             if (CollapseKey(k) == collapsed)
@@ -60,31 +58,79 @@ public static class RelicTierData
         return null;
     }
 
-    public static void SetCustomTier(string relicName, string tier)
+    private static RelicTierResult? LookupCustomTier(string key)
     {
-        _customIndex[NormalizeName(relicName)] = tier;
+        foreach (var (tier, list) in _customOrdered)
+        {
+            var idx = list.FindIndex(r => r.Equals(key, StringComparison.OrdinalIgnoreCase));
+            if (idx < 0)
+            {
+                var collapsed = CollapseKey(key);
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (CollapseKey(list[i]) == collapsed) { idx = i; break; }
+                }
+            }
+            if (idx >= 0)
+            {
+                var score = TierData.CalculatePositionScore(tier, idx, list.Count);
+                return new RelicTierResult(tier, score);
+            }
+        }
+        return null;
+    }
+
+    public static void SetCustomTier(string relicName, string tier, int insertAt = -1)
+    {
+        var key = NormalizeName(relicName);
+        RemoveCustomTier(relicName);
+
+        if (!_customOrdered.ContainsKey(tier))
+            _customOrdered[tier] = new();
+
+        var list = _customOrdered[tier];
+        if (insertAt >= 0 && insertAt < list.Count)
+            list.Insert(insertAt, key);
+        else
+            list.Add(key);
+    }
+
+    public static void SetCustomTierList(string tier, List<string> orderedRelics)
+    {
+        _customOrdered[tier] = orderedRelics;
     }
 
     public static void RemoveCustomTier(string relicName)
     {
-        _customIndex.Remove(NormalizeName(relicName));
+        var key = NormalizeName(relicName);
+        foreach (var (_, list) in _customOrdered)
+            list.RemoveAll(r => r.Equals(key, StringComparison.OrdinalIgnoreCase));
     }
 
-    public static Dictionary<string, string> GetCustomIndex() => _customIndex;
+    public static Dictionary<string, List<string>> GetCustomOrdered() => _customOrdered;
 
     public static void ResetCustomTiers()
     {
-        _customIndex.Clear();
+        _customOrdered.Clear();
     }
 
-    public static void LoadCustomFromJson(System.Text.Json.JsonElement el)
+    public static void LoadCustomFromJson(JsonElement el)
     {
-        _customIndex.Clear();
-        foreach (var prop in el.EnumerateObject())
+        _customOrdered.Clear();
+        foreach (var tierProp in el.EnumerateObject())
         {
-            _customIndex[prop.Name] = prop.Value.GetString() ?? "";
+            var list = new List<string>();
+            if (tierProp.Value.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in tierProp.Value.EnumerateArray())
+                {
+                    var name = item.GetString();
+                    if (!string.IsNullOrEmpty(name)) list.Add(name);
+                }
+            }
+            _customOrdered[tierProp.Name] = list;
         }
-        Log.Info($"[SmartPick] Custom relic tiers loaded ({_customIndex.Count} relics)");
+        Log.Info($"[SmartPick] Custom relic tiers loaded ({_customOrdered.Sum(t => t.Value.Count)} relics)");
     }
 
     private static string NormalizeName(string name)
@@ -92,10 +138,6 @@ public static class RelicTierData
         return name.Trim().ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Convert relic ID entry (e.g. "bag_of_preparation") to display name ("Bag Of Preparation")
-    /// for tier lookup against the JSON which uses display names.
-    /// </summary>
     public static string IdEntryToDisplayName(string entry)
     {
         var words = entry.Split('_', StringSplitOptions.RemoveEmptyEntries);
@@ -130,7 +172,7 @@ public static class RelicTierData
 
         foreach (var tierProp in tiers.EnumerateObject())
         {
-            var tierLetter = tierProp.Name; // S, A, B, C, D
+            var tierLetter = tierProp.Name;
             foreach (var relic in tierProp.Value.EnumerateArray())
             {
                 var relicName = relic.GetString();
