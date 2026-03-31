@@ -4,9 +4,13 @@
 
 ![Merchant screen with card and relic badges](example-merchant.png)
 
-A lightweight mod that shows **tier ratings** directly on cards and relics in Slay the Spire 2. Instantly see which picks are S-tier and which are trash — no external overlay needed.
+![In-game tier editor](example-editor.png)
+
+A lightweight mod that shows **tier ratings** directly on cards and relics in Slay the Spire 2. Instantly see which picks are S-tier and which are trash — no external overlay needed. Don't agree with the ratings? Press **F7** to open the built-in tier editor!
 
 ## Features
+
+### Tier Badges
 
 - **Tier badges on every card** — colored circle (S/A/B/C/D) with a blended score, shown on:
   - Card reward screen (post-combat & events)
@@ -20,9 +24,30 @@ A lightweight mod that shows **tier ratings** directly on cards and relics in Sl
   - Merchant shop
   - Treasure room
   - Relic compendium
+
+### In-Game Tier Editor (F7)
+
+- Press **F7** at any time to open the tier editor
+- **Drag-and-drop** cards and relics between S/A/B/C/D tiers
+- **Reorder within tiers** — position determines score (first = strongest)
+- Separate tabs for Cards (with character filter) and Relics
+- Full card preview and game hover tips on hover
+- Ancient/unassigned relics can be dragged into any tier
+- Auto-saves on every change
+
+### Share Tier Lists
+
+- **Export** — copies your full tier list as JSON to clipboard
+- **Import** — paste someone else's tier list from clipboard
+- Import shows a visual diff: which items changed tiers (old → new)
+- Share via Discord, Reddit, or any text channel
+
+### Other
+
 - **Two card tier sources blended** — combines [Mobalytics](https://mobalytics.gg/slay-the-spire-2/tier-lists/cards) and [slaythespire-2.com](https://slaythespire-2.com/card-tier) tier lists into a single rating
 - **Relic tiers** from [Mobalytics](https://mobalytics.gg/slay-the-spire-2/tier-lists/relics) (global, not per-character)
 - **All 5 characters supported** — Ironclad, Silent, Defect, Regent, Necrobinder
+- **Multiplayer compatible**
 - **WoW-style color coding:**
   - **S** — Orange (legendary)
   - **A** — Purple (epic)
@@ -32,11 +57,14 @@ A lightweight mod that shows **tier ratings** directly on cards and relics in Sl
 
 ## Installation
 
-### From Steam Workshop (coming soon)
+### Download
 
-Subscribe to the mod on Steam Workshop — it installs automatically.
+Download the latest zip from [GitHub Releases](https://github.com/vasia123/STS2-SmartPickMod/releases) or [Nexus Mods](https://www.nexusmods.com/slaythespire2).
 
-### Manual installation
+1. Extract all files to `Slay the Spire 2/mods/`
+2. Enable in game: **Settings > Modding > SmartPick > Restart**
+
+### Build from source
 
 1. **Build the mod** (requires [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) and [Godot 4.5 .NET](https://godotengine.org/download)):
 
@@ -75,7 +103,7 @@ Tier data from two community sources is embedded in the DLL as JSON resources an
 - **[slaythespire-2.com](https://slaythespire-2.com/card-tier)** — community wiki card tiers
 - **[Mobalytics](https://mobalytics.gg/slay-the-spire-2/tier-lists/relics)** — relic tier list
 
-Tier list JSONs are in `data/tier_lists/`. Replace them to update ratings.
+Tier list JSONs are in `data/tier_lists/`. Or use the in-game editor (F7) to customize ratings.
 
 ## License
 
