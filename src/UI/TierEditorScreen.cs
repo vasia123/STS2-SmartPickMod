@@ -66,6 +66,7 @@ public partial class TierEditorScreen : Control
             // _Ready() may not be called by Godot on unregistered C# classes,
             // so we call BuildUI manually after adding to tree
             screen.BuildUI();
+            Patches.TierEditorInstallPatch.SetOpenButtonVisible(false);
         }
         catch (Exception ex)
         {
@@ -1425,6 +1426,7 @@ public partial class TierEditorScreen : Control
     {
         _instance = null;
         QueueFree();
+        Patches.TierEditorInstallPatch.SetOpenButtonVisible(true);
 
         // Refresh badges on any active screens
         RefreshActiveBadges();
