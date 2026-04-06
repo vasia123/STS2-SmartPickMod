@@ -10,7 +10,7 @@
 		<ModName>SmartPick</ModName>
 		<ModDisplayName>SmartPick</ModDisplayName>
 		<ModAuthor>vasia123</ModAuthor>
-		<ModVersion>1.5.0</ModVersion>
+		<ModVersion>1.6.0</ModVersion>
 
 		<AssemblyName>$(ModName)</AssemblyName>
 		<Version>$(ModVersion)</Version>
