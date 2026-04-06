@@ -195,7 +195,6 @@ public partial class TierRow : HBoxContainer
 
         // Find the closest item considering both rows (Y) and columns (X)
         int bestIndex = _flow.GetChildCount();
-        float bestDist = float.MaxValue;
 
         for (int i = 0; i < _flow.GetChildCount(); i++)
         {

@@ -368,6 +368,10 @@ public partial class TierEditorScreen : Control
         resetBtn.Pressed += OnResetConfirm;
         footer.AddChild(resetBtn);
 
+        var clearBtn = CreateFooterButton("Clear All to ?", new Color(1f, 0.75f, 0.2f));
+        clearBtn.Pressed += OnClearAllConfirm;
+        footer.AddChild(clearBtn);
+
         var spacer = new Control();
         spacer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         footer.AddChild(spacer);
@@ -837,6 +841,118 @@ public partial class TierEditorScreen : Control
         _importDialog = overlay;
     }
 
+    private void OnClearAllConfirm()
+    {
+        if (_importDialog != null && GodotObject.IsInstanceValid(_importDialog))
+            _importDialog.QueueFree();
+
+        var viewportSize = GetViewport().GetVisibleRect().Size;
+        bool isCards = _currentTab == Tab.Cards;
+
+        string targetName;
+        if (isCards)
+        {
+            var charEntry = _characters.FirstOrDefault(c => c.poolTitle == _currentCharacter);
+            targetName = charEntry.localizedName ?? _currentCharacter;
+        }
+        else
+        {
+            targetName = "relics";
+        }
+
+        var overlay = new ColorRect();
+        overlay.Color = new Color(0, 0, 0, 0.6f);
+        overlay.Position = Vector2.Zero;
+        overlay.Size = viewportSize;
+        overlay.MouseFilter = MouseFilterEnum.Stop;
+
+        var panel = new PanelContainer();
+        var panelStyle = new StyleBoxFlat();
+        panelStyle.BgColor = new Color(0.12f, 0.1f, 0.06f, 0.98f);
+        panelStyle.SetCornerRadiusAll(8);
+        panelStyle.BorderWidthBottom = 2;
+        panelStyle.BorderWidthTop = 2;
+        panelStyle.BorderWidthLeft = 2;
+        panelStyle.BorderWidthRight = 2;
+        panelStyle.BorderColor = new Color(1f, 0.75f, 0.2f);
+        panelStyle.ContentMarginLeft = 30;
+        panelStyle.ContentMarginRight = 30;
+        panelStyle.ContentMarginTop = 20;
+        panelStyle.ContentMarginBottom = 20;
+        panel.AddThemeStyleboxOverride("panel", panelStyle);
+        panel.Position = new Vector2(viewportSize.X / 2 - 220, viewportSize.Y / 2 - 80);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 15);
+
+        var msg = new Label();
+        msg.Text = isCards
+            ? $"Move all {targetName} cards to unassigned (?)?"
+            : "Move all relics to unassigned (?)?";
+        msg.AddThemeFontSizeOverride("font_size", 20);
+        msg.AddThemeColorOverride("font_color", new Color(1f, 0.9f, 0.7f));
+        msg.HorizontalAlignment = HorizontalAlignment.Center;
+        vbox.AddChild(msg);
+
+        var warn = new Label();
+        warn.Text = "Items will lose their tier rankings.";
+        warn.AddThemeFontSizeOverride("font_size", 15);
+        warn.AddThemeColorOverride("font_color", new Color(1f, 0.75f, 0.2f));
+        warn.HorizontalAlignment = HorizontalAlignment.Center;
+        vbox.AddChild(warn);
+
+        var btnRow = new HBoxContainer();
+        btnRow.AddThemeConstantOverride("separation", 20);
+        btnRow.Alignment = BoxContainer.AlignmentMode.Center;
+
+        var confirmBtn = CreateFooterButton("Clear All", new Color(1f, 0.75f, 0.2f));
+        confirmBtn.Pressed += () =>
+        {
+            if (isCards)
+            {
+                foreach (var tier in TierData.TierLetters)
+                    TierData.SetCustomTierList(_currentCharacter, tier, new List<string>());
+
+                var allCardNames = ModelDb.AllCards
+                    .Where(c => c.Pool?.Title?.ToLowerInvariant() == _currentCharacter)
+                    .Select(c => TierData.NormalizeCardName(CardBadgeOverlay.NormalizeCardIdPublic(c.Id.Entry)))
+                    .ToList();
+                TierData.SetCustomTierList(_currentCharacter, "?", allCardNames);
+            }
+            else
+            {
+                foreach (var tier in TierData.TierLetters)
+                    RelicTierData.SetCustomTierList(tier, new List<string>());
+
+                var allRelicNames = ModelDb.AllRelics
+                    .Select(r => RelicTierData.IdEntryToDisplayName(r.Id.Entry).Trim().ToLowerInvariant())
+                    .ToList();
+                RelicTierData.SetCustomTierList("?", allRelicNames);
+            }
+
+            TierData.SaveCustomTiers();
+            PopulateItems();
+            overlay.QueueFree();
+            _importDialog = null;
+            ShowStatus(isCards ? $"All {targetName} cards moved to ?" : "All relics moved to ?");
+        };
+        btnRow.AddChild(confirmBtn);
+
+        var cancelBtn = CreateFooterButton("Cancel", new Color(0.8f, 0.8f, 0.8f));
+        cancelBtn.Pressed += () =>
+        {
+            overlay.QueueFree();
+            _importDialog = null;
+        };
+        btnRow.AddChild(cancelBtn);
+
+        vbox.AddChild(btnRow);
+        panel.AddChild(vbox);
+        overlay.AddChild(panel);
+        AddChild(overlay);
+        _importDialog = overlay;
+    }
+
     public override void _GuiInput(InputEvent @event)
     {
         // Consume all GUI input to prevent clicks passing through to game screens below
@@ -1137,15 +1253,79 @@ public partial class TierEditorScreen : Control
 
         // Title
         var title = new Label();
-        title.Text = $"Import Changes ({cardDiffs.Count} cards, {relicDiffs.Count} relics)";
         title.AddThemeFontSizeOverride("font_size", 20);
         title.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.5f));
         title.HorizontalAlignment = HorizontalAlignment.Center;
         vbox.AddChild(title);
 
+        // Character/relic filter checkboxes
+        var selectedChars = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (var ch in importedCards.Keys) selectedChars[ch] = true;
+        bool selectedRelics = relicDiffs.Count > 0;
+
+        // Track nodes per character/relics for visibility toggling
+        var charNodes = new Dictionary<string, List<Control>>(StringComparer.OrdinalIgnoreCase);
+        var relicNodes = new List<Control>();
+
+        // Build character filter row
+        var grouped = cardDiffs.GroupBy(d => d.character).ToList();
+        if (grouped.Count > 1 || (grouped.Count > 0 && relicDiffs.Count > 0))
+        {
+            var filterRow = new HFlowContainer();
+            filterRow.AddThemeConstantOverride("h_separation", 10);
+            filterRow.AddThemeConstantOverride("v_separation", 4);
+
+            foreach (var group in grouped)
+            {
+                var charKey = group.Key;
+                var charDisplayName = charKey;
+                try
+                {
+                    var charModel = ModelDb.AllCharacters.FirstOrDefault(c =>
+                        c.CardPool?.Title?.ToLowerInvariant() == charKey.ToLowerInvariant());
+                    if (charModel != null) charDisplayName = charModel.Title.GetFormattedText();
+                }
+                catch { }
+
+                var cb = new CheckBox();
+                cb.Text = $"{charDisplayName} ({group.Count()})";
+                cb.ButtonPressed = true;
+                cb.AddThemeFontSizeOverride("font_size", 14);
+                cb.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.7f));
+                cb.Toggled += (pressed) =>
+                {
+                    selectedChars[charKey] = pressed;
+                    if (charNodes.TryGetValue(charKey, out var nodes))
+                        foreach (var n in nodes) n.Visible = pressed;
+                    UpdateImportTitle(title, cardDiffs, relicDiffs, selectedChars, selectedRelics);
+                };
+                filterRow.AddChild(cb);
+            }
+
+            if (relicDiffs.Count > 0)
+            {
+                var relicCb = new CheckBox();
+                relicCb.Text = $"Relics ({relicDiffs.Count})";
+                relicCb.ButtonPressed = true;
+                relicCb.AddThemeFontSizeOverride("font_size", 14);
+                relicCb.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.7f));
+                relicCb.Toggled += (pressed) =>
+                {
+                    selectedRelics = pressed;
+                    foreach (var n in relicNodes) n.Visible = pressed;
+                    UpdateImportTitle(title, cardDiffs, relicDiffs, selectedChars, selectedRelics);
+                };
+                filterRow.AddChild(relicCb);
+            }
+
+            vbox.AddChild(filterRow);
+        }
+
+        UpdateImportTitle(title, cardDiffs, relicDiffs, selectedChars, selectedRelics);
+
         // Scrollable diff list
         var scroll = new ScrollContainer();
-        scroll.CustomMinimumSize = new Vector2(0, dialogHeight - 120);
+        scroll.CustomMinimumSize = new Vector2(0, dialogHeight - 150);
         scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
         vbox.AddChild(scroll);
 
@@ -1155,28 +1335,33 @@ public partial class TierEditorScreen : Control
         scroll.AddChild(diffList);
 
         // Card diffs grouped by character
-        if (cardDiffs.Count > 0)
+        foreach (var group in grouped)
         {
-            var grouped = cardDiffs.GroupBy(d => d.character);
-            foreach (var group in grouped)
-            {
-                var charLabel = new Label();
-                var charDisplayName = group.Key;
-                try
-                {
-                    var charModel = ModelDb.AllCharacters.FirstOrDefault(c =>
-                        c.CardPool?.Title?.ToLowerInvariant() == group.Key.ToLowerInvariant());
-                    if (charModel != null) charDisplayName = charModel.Title.GetFormattedText();
-                }
-                catch { }
-                charLabel.Text = $"— {charDisplayName} —";
-                charLabel.AddThemeFontSizeOverride("font_size", 15);
-                charLabel.AddThemeColorOverride("font_color", new Color(0.8f, 0.75f, 0.6f));
-                charLabel.HorizontalAlignment = HorizontalAlignment.Center;
-                diffList.AddChild(charLabel);
+            var charKey = group.Key;
+            var nodes = new List<Control>();
+            charNodes[charKey] = nodes;
 
-                foreach (var (_, entry) in group)
-                    diffList.AddChild(CreateDiffRow(entry));
+            var charLabel = new Label();
+            var charDisplayName = charKey;
+            try
+            {
+                var charModel = ModelDb.AllCharacters.FirstOrDefault(c =>
+                    c.CardPool?.Title?.ToLowerInvariant() == charKey.ToLowerInvariant());
+                if (charModel != null) charDisplayName = charModel.Title.GetFormattedText();
+            }
+            catch { }
+            charLabel.Text = $"— {charDisplayName} —";
+            charLabel.AddThemeFontSizeOverride("font_size", 15);
+            charLabel.AddThemeColorOverride("font_color", new Color(0.8f, 0.75f, 0.6f));
+            charLabel.HorizontalAlignment = HorizontalAlignment.Center;
+            diffList.AddChild(charLabel);
+            nodes.Add(charLabel);
+
+            foreach (var (_, entry) in group)
+            {
+                var row = CreateDiffRow(entry);
+                diffList.AddChild(row);
+                nodes.Add(row);
             }
         }
 
@@ -1189,9 +1374,14 @@ public partial class TierEditorScreen : Control
             relicHeader.AddThemeColorOverride("font_color", new Color(0.8f, 0.75f, 0.6f));
             relicHeader.HorizontalAlignment = HorizontalAlignment.Center;
             diffList.AddChild(relicHeader);
+            relicNodes.Add(relicHeader);
 
             foreach (var entry in relicDiffs)
-                diffList.AddChild(CreateDiffRow(entry));
+            {
+                var row = CreateDiffRow(entry);
+                diffList.AddChild(row);
+                relicNodes.Add(row);
+            }
         }
 
         // Buttons
@@ -1204,7 +1394,11 @@ public partial class TierEditorScreen : Control
         confirmBtn.AddThemeFontSizeOverride("font_size", 16);
         confirmBtn.Pressed += () =>
         {
-            ApplyImport(importedCards, importedRelics);
+            var filteredCards = importedCards
+                .Where(kv => selectedChars.GetValueOrDefault(kv.Key, false))
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
+            var filteredRelics = selectedRelics ? importedRelics : new();
+            ApplyImport(filteredCards, filteredRelics);
             doc.Dispose();
             overlay.QueueFree();
             _importDialog = null;
@@ -1358,6 +1552,16 @@ public partial class TierEditorScreen : Control
         badge.AddChild(label);
 
         return badge;
+    }
+
+    private static void UpdateImportTitle(Label title,
+        List<(string character, DiffEntry entry)> cardDiffs,
+        List<DiffEntry> relicDiffs,
+        Dictionary<string, bool> selectedChars, bool selectedRelics)
+    {
+        int cards = cardDiffs.Count(d => selectedChars.GetValueOrDefault(d.character, false));
+        int relics = selectedRelics ? relicDiffs.Count : 0;
+        title.Text = $"Import Changes ({cards} cards, {relics} relics)";
     }
 
     private void ApplyImport(
