@@ -106,6 +106,9 @@ public partial class TierItemIcon : PanelContainer
     private void ShowGameHoverTips()
     {
         if (HoverTips == null) return;
+        // Cards show hover tips via TierEditorScreen (positioned next to the floating card preview).
+        // Only relics show them from here (aligned to the right of the icon).
+        if (ItemType == Type.Card) return;
         try
         {
             var tipSet = NHoverTipSet.CreateAndShow(this, HoverTips);

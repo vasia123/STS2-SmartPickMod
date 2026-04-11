@@ -28,6 +28,7 @@ public partial class TierEditorScreen : Control
     private VBoxContainer _rowsContainer = null!;
     private Control _cardPreview = null!;
     private Control? _previewHolder;
+    private Control? _cardPreviewTipsOwner;
     private bool _isDraggingCard;
     private Label? _statusLabel;
     private readonly List<Button> _charButtons = new();
@@ -88,6 +89,12 @@ public partial class TierEditorScreen : Control
             catch { localName = poolTitle; }
             _characters.Add((poolTitle, localName));
         }
+        // Colorless is a pseudo-character: real CardPool with Title="colorless", but no CharacterModel
+        string colorlessName;
+        try { colorlessName = new MegaCrit.Sts2.Core.Localization.LocString("card_library", "POOL_COLORLESS_TIP").GetFormattedText(); }
+        catch { colorlessName = "Colorless"; }
+        _characters.Add(("colorless", colorlessName));
+
         if (_characters.Count > 0)
             _currentCharacter = _characters[0].poolTitle;
 
@@ -198,25 +205,27 @@ public partial class TierEditorScreen : Control
         parent.AddChild(_charFilter);
         var charFilter = _charFilter;
 
-        foreach (var ch in ModelDb.AllCharacters)
+        foreach (var (poolTitle, localizedName) in _characters)
         {
-            var poolTitle = ch.CardPool?.Title?.ToLowerInvariant() ?? ch.Id.Entry.ToLowerInvariant();
             var btn = new Button();
             btn.ToggleMode = true;
             btn.ButtonPressed = poolTitle == _currentCharacter;
             StyleToggleButton(btn);
 
-            // Use Button's built-in icon + text
+            // Use Button's built-in icon + text (no icon for colorless — it has no CharacterModel)
             try
             {
-                var iconTex = ch.IconTexture;
-                if (iconTex != null)
-                    btn.Icon = iconTex;
+                var ch = ModelDb.AllCharacters.FirstOrDefault(c =>
+                    (c.CardPool?.Title?.ToLowerInvariant() ?? c.Id.Entry.ToLowerInvariant()) == poolTitle);
+                if (ch != null)
+                {
+                    var iconTex = ch.IconTexture;
+                    if (iconTex != null) btn.Icon = iconTex;
+                }
             }
             catch { }
 
-            try { btn.Text = ch.Title.GetFormattedText(); }
-            catch { btn.Text = poolTitle; }
+            btn.Text = localizedName;
             btn.AddThemeFontSizeOverride("font_size", 16);
             btn.AddThemeConstantOverride("icon_max_width", 24);
             var charId = poolTitle;
@@ -631,6 +640,22 @@ public partial class TierEditorScreen : Control
 
             UpdatePreviewPosition();
             _cardPreview.Visible = true;
+
+            // Show hover tips (keyword explanations) next to the card preview
+            try
+            {
+                var tips = card.HoverTips?.ToList();
+                if (tips != null && tips.Count > 0)
+                {
+                    var tipSet = NHoverTipSet.CreateAndShow(source, tips);
+                    var cx = _cardPreview.GlobalPosition.X;
+                    var cy = _cardPreview.GlobalPosition.Y;
+                    // Place tips to the right of the card preview, aligned with its top
+                    tipSet.GlobalPosition = new Vector2(cx + 160, cy - 211);
+                    _cardPreviewTipsOwner = source;
+                }
+            }
+            catch (Exception ex) { Log.Error($"[SmartPick] ShowCardPreview tips: {ex.Message}"); }
         }
         catch (Exception ex)
         {
@@ -650,6 +675,11 @@ public partial class TierEditorScreen : Control
         }
         _previewHolder = null;
         _cardPreview.Visible = false;
+        if (_cardPreviewTipsOwner != null && GodotObject.IsInstanceValid(_cardPreviewTipsOwner))
+        {
+            try { NHoverTipSet.Remove(_cardPreviewTipsOwner); } catch { }
+        }
+        _cardPreviewTipsOwner = null;
     }
 
     private void OnItemDroppedToTier(string itemId, TierItemIcon.Type itemType, string character, string tier, int insertAt)
