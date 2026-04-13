@@ -1308,14 +1308,7 @@ public partial class TierEditorScreen : Control
             foreach (var group in grouped)
             {
                 var charKey = group.Key;
-                var charDisplayName = charKey;
-                try
-                {
-                    var charModel = ModelDb.AllCharacters.FirstOrDefault(c =>
-                        c.CardPool?.Title?.ToLowerInvariant() == charKey.ToLowerInvariant());
-                    if (charModel != null) charDisplayName = charModel.Title.GetFormattedText();
-                }
-                catch { }
+                var charDisplayName = GetCharacterDisplayName(charKey);
 
                 var cb = new CheckBox();
                 cb.Text = $"{charDisplayName} ({group.Count()})";
@@ -1372,15 +1365,7 @@ public partial class TierEditorScreen : Control
             charNodes[charKey] = nodes;
 
             var charLabel = new Label();
-            var charDisplayName = charKey;
-            try
-            {
-                var charModel = ModelDb.AllCharacters.FirstOrDefault(c =>
-                    c.CardPool?.Title?.ToLowerInvariant() == charKey.ToLowerInvariant());
-                if (charModel != null) charDisplayName = charModel.Title.GetFormattedText();
-            }
-            catch { }
-            charLabel.Text = $"— {charDisplayName} —";
+            charLabel.Text = $"— {GetCharacterDisplayName(charKey)} —";
             charLabel.AddThemeFontSizeOverride("font_size", 15);
             charLabel.AddThemeColorOverride("font_color", new Color(0.8f, 0.75f, 0.6f));
             charLabel.HorizontalAlignment = HorizontalAlignment.Center;
@@ -1582,6 +1567,29 @@ public partial class TierEditorScreen : Control
         badge.AddChild(label);
 
         return badge;
+    }
+
+    /// <summary>
+    /// Get localized display name for a character pool title.
+    /// Works for real characters (ironclad, silent, etc.) and the colorless pseudo-character.
+    /// </summary>
+    private string GetCharacterDisplayName(string poolTitle)
+    {
+        // First check our _characters list (includes colorless with localized name)
+        var entry = _characters.FirstOrDefault(c =>
+            c.poolTitle.Equals(poolTitle, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(entry.localizedName))
+            return entry.localizedName;
+
+        // Fallback: look up in ModelDb directly
+        try
+        {
+            var charModel = ModelDb.AllCharacters.FirstOrDefault(c =>
+                c.CardPool?.Title?.ToLowerInvariant() == poolTitle.ToLowerInvariant());
+            if (charModel != null) return charModel.Title.GetFormattedText();
+        }
+        catch { }
+        return poolTitle;
     }
 
     private static void UpdateImportTitle(Label title,

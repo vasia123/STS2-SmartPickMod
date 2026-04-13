@@ -99,6 +99,83 @@ public static class RelicBadgeOverlay
         _badges.Clear();
     }
 
+    /// <summary>
+    /// Attach a tier badge to the relic icon on an ancient event option button.
+    /// Badge is added as child of the RelicIcon node, so it's freed automatically with the event screen.
+    /// </summary>
+    public static void AttachBadgeToEventButton(Control eventButton, RelicModel relicModel)
+    {
+        try
+        {
+            var entry = relicModel.Id.Entry;
+            var relicName = RelicTierData.IdEntryToDisplayName(entry);
+            var tier = RelicTierData.GetTier(relicName);
+
+            if (string.IsNullOrEmpty(relicName) || tier == null) return;
+
+            // Find the %RelicIcon TextureRect
+            var relicIcon = eventButton.GetNodeOrNull<TextureRect>("%RelicIcon");
+            if (relicIcon == null || !relicIcon.Visible) return;
+
+            var color = TierColors.GetValueOrDefault(tier.Tier, TierColors["?"]);
+
+            const int badgeSize = 28;
+            const int radius = badgeSize / 2;
+
+            var badge = new PanelContainer();
+            badge.CustomMinimumSize = new Vector2(badgeSize, badgeSize);
+            badge.Size = new Vector2(badgeSize, badgeSize);
+            badge.MouseFilter = Control.MouseFilterEnum.Ignore;
+
+            var outerStyle = new StyleBoxFlat();
+            outerStyle.BgColor = new Color(0.12f, 0.10f, 0.08f, 0.95f);
+            outerStyle.CornerRadiusBottomLeft = radius;
+            outerStyle.CornerRadiusBottomRight = radius;
+            outerStyle.CornerRadiusTopLeft = radius;
+            outerStyle.CornerRadiusTopRight = radius;
+            outerStyle.BorderWidthBottom = 2;
+            outerStyle.BorderWidthTop = 2;
+            outerStyle.BorderWidthLeft = 2;
+            outerStyle.BorderWidthRight = 2;
+            outerStyle.BorderColor = new Color(0.35f, 0.28f, 0.2f);
+            outerStyle.ContentMarginLeft = 2;
+            outerStyle.ContentMarginRight = 2;
+            outerStyle.ContentMarginTop = 2;
+            outerStyle.ContentMarginBottom = 2;
+            badge.AddThemeStyleboxOverride("panel", outerStyle);
+
+            var inner = new PanelContainer();
+            inner.MouseFilter = Control.MouseFilterEnum.Ignore;
+            var innerStyle = new StyleBoxFlat();
+            innerStyle.BgColor = color;
+            innerStyle.CornerRadiusBottomLeft = radius;
+            innerStyle.CornerRadiusBottomRight = radius;
+            innerStyle.CornerRadiusTopLeft = radius;
+            innerStyle.CornerRadiusTopRight = radius;
+            inner.AddThemeStyleboxOverride("panel", innerStyle);
+
+            var label = new Label();
+            label.Text = tier.Tier;
+            label.HorizontalAlignment = HorizontalAlignment.Center;
+            label.VerticalAlignment = VerticalAlignment.Center;
+            label.AddThemeColorOverride("font_color", new Color(1f, 1f, 1f));
+            label.AddThemeColorOverride("font_outline_color", new Color(0f, 0f, 0f));
+            label.AddThemeConstantOverride("outline_size", 5);
+            label.AddThemeFontSizeOverride("font_size", 15);
+            label.MouseFilter = Control.MouseFilterEnum.Ignore;
+            inner.AddChild(label);
+            badge.AddChild(inner);
+
+            relicIcon.AddChild(badge);
+            // Position at top-right of the relic icon
+            badge.Position = new Vector2(relicIcon.Size.X - badgeSize * 0.7f, -badgeSize * 0.3f);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[SmartPick] AttachBadgeToEventButton: {ex.Message}");
+        }
+    }
+
     private static void FindRelicsInTree(Node parent, List<(Control, RelicModel)> results, int depth)
     {
         if (depth > 15) return;

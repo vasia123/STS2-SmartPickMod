@@ -1,6 +1,8 @@
 using FirstMod;
 using Godot;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Nodes.Events;
 using MegaCrit.Sts2.Core.Nodes.Screens;
 using MegaCrit.Sts2.Core.Nodes.Screens.RelicCollection;
 using MegaCrit.Sts2.Core.Nodes.Screens.Shops;
@@ -103,5 +105,21 @@ public static class MerchantRelicPurchasePatch
     public static void AfterPurchase(NMerchantInventory __instance)
     {
         RelicBadgeOverlay.RebadgeAfterPurchase(__instance);
+    }
+}
+
+/// <summary>
+/// Attach tier badge to ancient event relic icons when the option button initializes.
+/// </summary>
+[HarmonyPatch(typeof(NEventOptionButton), nameof(NEventOptionButton._Ready))]
+public static class AncientEventRelicBadgePatch
+{
+    [HarmonyPostfix]
+    public static void AfterReady(NEventOptionButton __instance)
+    {
+        if (__instance.Event is not AncientEventModel) return;
+        if (__instance.Option?.Relic == null) return;
+
+        RelicBadgeOverlay.AttachBadgeToEventButton(__instance, __instance.Option.Relic);
     }
 }
