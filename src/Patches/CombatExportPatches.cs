@@ -14,41 +14,55 @@ namespace FirstMod.Patches;
 [HarmonyPatch]
 public static class CombatExportPatches
 {
+    // Wrap every postfix in try/catch — exceptions from the legacy exporter MUST NOT propagate
+    // back into the game's combat-entry flow (it causes black-screen on combat entry, see v0.104.0).
+
     [HarmonyPatch(typeof(Player), nameof(Player.PopulateCombatState))]
     [HarmonyPostfix]
     public static void AfterPopulateCombatState(Player __instance)
     {
-        CombatExporter.RequestExportFrom(__instance);
+        try { CombatExporter.RequestExportFrom(__instance); }
+        catch (Exception ex) { Log.Error($"[SmartPick] PopulateCombatState patch: {ex.Message}"); }
     }
 
     [HarmonyPatch(typeof(CombatState), nameof(CombatState.AddCreature), new[] { typeof(Creature) })]
     [HarmonyPostfix]
     public static void AfterAddCreature(CombatState __instance)
     {
-        CombatExporter.SetCombatState(__instance);
-        CombatExporter.RequestExport();
+        try
+        {
+            CombatExporter.SetCombatState(__instance);
+            CombatExporter.RequestExport();
+        }
+        catch (Exception ex) { Log.Error($"[SmartPick] AddCreature patch: {ex.Message}"); }
     }
 
     [HarmonyPatch(typeof(CombatState), nameof(CombatState.RemoveCreature), new[] { typeof(Creature), typeof(bool) })]
     [HarmonyPostfix]
     public static void AfterRemoveCreature(CombatState __instance)
     {
-        CombatExporter.RequestExport();
+        try { CombatExporter.RequestExport(); }
+        catch (Exception ex) { Log.Error($"[SmartPick] RemoveCreature patch: {ex.Message}"); }
     }
 
     [HarmonyPatch(typeof(CombatState), "set_CurrentSide")]
     [HarmonyPostfix]
     public static void AfterSideChanged(CombatState __instance)
     {
-        CombatExporter.SetCombatState(__instance);
-        CombatExporter.RequestExport();
+        try
+        {
+            CombatExporter.SetCombatState(__instance);
+            CombatExporter.RequestExport();
+        }
+        catch (Exception ex) { Log.Error($"[SmartPick] SideChanged patch: {ex.Message}"); }
     }
 
     [HarmonyPatch(typeof(CombatState), "set_RoundNumber")]
     [HarmonyPostfix]
     public static void AfterRoundChanged(CombatState __instance)
     {
-        CombatExporter.RequestExport();
+        try { CombatExporter.RequestExport(); }
+        catch (Exception ex) { Log.Error($"[SmartPick] RoundChanged patch: {ex.Message}"); }
     }
 
     [HarmonyPatch(typeof(PlayerCombatState), "set_Energy")]
@@ -72,7 +86,8 @@ public static class CombatExportPatches
     [HarmonyPostfix]
     public static void AfterCardPileChanged()
     {
-        CombatExporter.RequestExport();
+        try { CombatExporter.RequestExport(); }
+        catch (Exception ex) { Log.Error($"[SmartPick] CardPileChanged patch: {ex.Message}"); }
     }
 
     [HarmonyPatch(typeof(NMerchantInventory), nameof(NMerchantInventory.Open))]
@@ -105,7 +120,8 @@ public static class CombatExportPatches
     [HarmonyPostfix]
     public static void AfterMerchantClose()
     {
-        CombatExporter.ClearMerchant();
+        try { CombatExporter.ClearMerchant(); }
+        catch (Exception ex) { Log.Error($"[SmartPick] Merchant close clear: {ex.Message}"); }
         try { RewardExporter.ClearRewardState(); }
         catch (Exception ex) { Log.Error($"[SmartPick] Merchant close clear reward: {ex.Message}"); }
     }

@@ -108,11 +108,27 @@ public static class CombatExporter
 
         if (_combat == null)
         {
-            _combat = player.PlayerCombatState?.Hand?.Cards?.FirstOrDefault()?.CombatState
-                      ?? player.PlayerCombatState?.DrawPile?.Cards?.FirstOrDefault()?.CombatState;
+            _combat = TryGetCombatStateFromCard(player.PlayerCombatState?.Hand?.Cards?.FirstOrDefault())
+                      ?? TryGetCombatStateFromCard(player.PlayerCombatState?.DrawPile?.Cards?.FirstOrDefault());
         }
 
         RequestExport();
+    }
+
+    /// <summary>
+    /// Reflection-based access to CardModel.CombatState. Direct access fails JIT-compile when the property
+    /// signature changes between game versions (e.g., the v0.104.0 API change), taking down combat entry.
+    /// </summary>
+    private static CombatState? TryGetCombatStateFromCard(object? card)
+    {
+        if (card == null) return null;
+        try
+        {
+            var prop = card.GetType().GetProperty("CombatState",
+                BindingFlags.Public | BindingFlags.Instance);
+            return prop?.GetValue(card) as CombatState;
+        }
+        catch { return null; }
     }
 
     public static void InvalidateRelicCache()
@@ -649,9 +665,34 @@ public static class CombatExporter
         {
             name = LocStr(relic.Title) ?? relic.GetType().Name,
             id = relic.GetType().Name,
-            description = LocStr(relic.Description, relicVars) ?? "",
+            description = TryGetRelicDescription(relic, relicVars) ?? "",
             rarity = relic.Rarity.ToString().ToLowerInvariant(),
         };
+    }
+
+    /// <summary>
+    /// Reflection-based access to relic description. RelicModel.Description was made private in
+    /// game v0.104.0; we try the public DynamicDescription first, then fall back to the private
+    /// Description via reflection.
+    /// </summary>
+    private static string? TryGetRelicDescription(RelicModel relic, DynamicVarSet? vars)
+    {
+        try
+        {
+            var t = relic.GetType();
+            foreach (var name in new[] { "DynamicDescription", "Description" })
+            {
+                var prop = t.GetProperty(name,
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (prop?.GetValue(relic) is { } loc)
+                {
+                    var s = LocStr(loc, vars);
+                    if (!string.IsNullOrEmpty(s)) return s;
+                }
+            }
+        }
+        catch { }
+        return null;
     }
 
     private static DynamicVarSet? TryRelicDynamicVars(RelicModel relic)
